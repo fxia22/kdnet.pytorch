@@ -92,7 +92,7 @@ for it in range(1000):
     for batch in range(10):
         j = np.random.randint(l)
         point_set, class_label = d[j]
-        target = Variable(class_label)
+        target = Variable(class_label).cuda()
         tree = [[] for i in range(levels + 1)]
         cutdim = [[] for i in range(levels)]
         tree[0].append(point_set)
