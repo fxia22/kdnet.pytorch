@@ -77,48 +77,45 @@ def split_ps(point_set):
     right_ps = torch.index_select(point_set, dim = 0, index = right_idx)
     return left_ps, right_ps, dim 
 
-
-
-
 d = PartDataset(root = '../unsupervised3d/shapenetcore_partanno_segmentation_benchmark_v0', classification = True)
-
-print(len(d.classes))
-
+l = len(d)
+print(len(d.classes), l)
 levels = (np.log(2048)/np.log(2)).astype(int)
-
 cutdim = torch.zeros((levels)).long()
-
-net = KDNet()
+net = KDNet().cuda()
 optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
 
-
-for i in range(1000):
-    
-    point_set, class_label = d[i]
-    target = Variable(class_label)
-    tree = [[] for i in range(levels + 1)]
-    cutdim = [[] for i in range(levels)]
-    tree[0].append(point_set)
-    for level in range(levels):
-        for item in tree[level]:
-            left_ps, right_ps, dim = split_ps(item)
-            tree[level+1].append(left_ps)
-            tree[level+1].append(right_ps)
-            cutdim[level].append(dim)  
-            cutdim[level].append(dim)  
-    cutdim = [(torch.from_numpy(np.array(item).astype(np.int64))) for item in cutdim]
-    points = torch.stack(tree[-1])
-    
-    
-    points_v = Variable(torch.unsqueeze(torch.squeeze(points), 0)).transpose(2,1)
-
-
+for it in range(1000):
     optimizer.zero_grad()
-    pred = net(points_v, cutdim)
+    losses = []
+    corrects = []
+    for batch in range(10):
+        j = np.random.randint(l)
+        point_set, class_label = d[j]
+        target = Variable(class_label)
+        tree = [[] for i in range(levels + 1)]
+        cutdim = [[] for i in range(levels)]
+        tree[0].append(point_set)
+        for level in range(levels):
+            for item in tree[level]:
+                left_ps, right_ps, dim = split_ps(item)
+                tree[level+1].append(left_ps)
+                tree[level+1].append(right_ps)
+                cutdim[level].append(dim)  
+                cutdim[level].append(dim)  
+        cutdim = [(torch.from_numpy(np.array(item).astype(np.int64))) for item in cutdim]
+        points = torch.stack(tree[-1])
+        points_v = Variable(torch.unsqueeze(torch.squeeze(points), 0)).transpose(2,1).cuda()
 
-    loss = F.nll_loss(pred, target)
-    loss.backward()
-    optimizer.step()
+        pred = net(points_v, cutdim)
+        
+        pred_choice = pred.data.max(1)[1]
+        correct = pred_choice.eq(target.data).cpu().sum()
+        corrects.append(correct)
+        loss = F.nll_loss(pred, target)
+        loss.backward()
     
-    print(loss)
-
+        losses.append(loss.data[0])
+        
+    optimizer.step()
+    print('batch: %d, loss: %f, correct %d/10' %( it, np.mean(losses), np.sum(corrects)))
