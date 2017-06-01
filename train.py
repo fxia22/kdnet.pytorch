@@ -61,13 +61,6 @@ def split_ps(point_set):
     right_idx = torch.squeeze(torch.nonzero(point_set[:,dim] < cut))
     middle_idx = torch.squeeze(torch.nonzero(point_set[:,dim] == cut))
     
-    #if torch.numel(left_idx) > 0:
-    #    left_idx = left_idx[:,0]
-    #if torch.numel(right_idx) > 0:
-    #    right_idx = right_idx[:,0]
-    #if torch.numel(middle_idx) > 0:
-    #    middle_idx = middle_idx[:,0] 
-    
     if torch.numel(left_idx) < num_points:
         left_idx = torch.cat([left_idx, middle_idx[0:1].repeat(num_points - torch.numel(left_idx))], 0)
     if torch.numel(right_idx) < num_points:
@@ -77,11 +70,41 @@ def split_ps(point_set):
     right_ps = torch.index_select(point_set, dim = 0, index = right_idx)
     return left_ps, right_ps, dim 
 
+
+
+def split_ps_reuse(point_set, level, pos, tree, cutdim):
+    sz = point_set.size()
+    num_points = np.array(sz)[0]/2
+    max_value = point_set.max(dim=0)[0]
+    min_value = -(-point_set).max(dim=0)[0]
+    diff = max_value - min_value
+
+    dim = torch.max(diff, dim = 1)[1][0,0]
+    
+    cut = torch.median(point_set[:,dim])[0][0]  
+    left_idx = torch.squeeze(torch.nonzero(point_set[:,dim] > cut))
+    right_idx = torch.squeeze(torch.nonzero(point_set[:,dim] < cut))
+    middle_idx = torch.squeeze(torch.nonzero(point_set[:,dim] == cut))
+    
+    if torch.numel(left_idx) < num_points:
+        left_idx = torch.cat([left_idx, middle_idx[0:1].repeat(num_points - torch.numel(left_idx))], 0)
+    if torch.numel(right_idx) < num_points:
+        right_idx = torch.cat([right_idx, middle_idx[0:1].repeat(num_points - torch.numel(right_idx))], 0)
+    
+    left_ps = torch.index_select(point_set, dim = 0, index = left_idx)
+    right_ps = torch.index_select(point_set, dim = 0, index = right_idx)
+    
+    tree[level+1][pos * 2] = left_ps
+    tree[level+1][pos * 2 + 1] = right_ps
+    cutdim[level][pos * 2] = dim
+    cutdim[level][pos * 2 + 1] = dim
+    
+    return
+
 d = PartDataset(root = '../unsupervised3d/shapenetcore_partanno_segmentation_benchmark_v0', classification = True)
 l = len(d)
 print(len(d.classes), l)
 levels = (np.log(2048)/np.log(2)).astype(int)
-cutdim = torch.zeros((levels)).long()
 net = KDNet().cuda()
 optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
 
@@ -92,22 +115,41 @@ for it in range(1000):
     for batch in range(10):
         j = np.random.randint(l)
         point_set, class_label = d[j]
+        
         target = Variable(class_label).cuda()
-        tree = [[] for i in range(levels + 1)]
-        cutdim = [[] for i in range(levels)]
-        tree[0].append(point_set)
-        for level in range(levels):
-            for item in tree[level]:
-                left_ps, right_ps, dim = split_ps(item)
-                tree[level+1].append(left_ps)
-                tree[level+1].append(right_ps)
-                cutdim[level].append(dim)  
-                cutdim[level].append(dim)  
-        cutdim = [(torch.from_numpy(np.array(item).astype(np.int64))) for item in cutdim]
+        if batch == 0 and it ==0:
+            tree = [[] for i in range(levels + 1)]
+            cutdim = [[] for i in range(levels)]
+            tree[0].append(point_set)
+
+            for level in range(levels):
+                for item in tree[level]:
+                    left_ps, right_ps, dim = split_ps(item)
+                    tree[level+1].append(left_ps)
+                    tree[level+1].append(right_ps)
+                    cutdim[level].append(dim)  
+                    cutdim[level].append(dim)  
+
+        else:
+            tree[0] = [point_set]
+            for level in range(levels):
+                for pos, item in enumerate(tree[level]):  
+                    split_ps_reuse(item, level, pos, tree, cutdim)
+                        #print level, pos
+                        
+        cutdim_v = [(torch.from_numpy(np.array(item).astype(np.int64))) for item in cutdim]
+            
+        #import gc
+        #import resource
+        #gc.collect()
+        #max_mem_used = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        #print("{:.2f} MB".format(max_mem_used / 1024))
+
+        
         points = torch.stack(tree[-1])
         points_v = Variable(torch.unsqueeze(torch.squeeze(points), 0)).transpose(2,1).cuda()
 
-        pred = net(points_v, cutdim)
+        pred = net(points_v, cutdim_v)
         
         pred_choice = pred.data.max(1)[1]
         correct = pred_choice.eq(target.data).cpu().sum()
