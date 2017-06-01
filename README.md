@@ -4,6 +4,6 @@ This repository is an independent implementation of https://arxiv.org/abs/1704.0
 
 ## data download and training
 
-download `bash download.sh #download dataset`, training: `python train.py`
+download `bash download.sh`, training: `python train.py`
 
 
