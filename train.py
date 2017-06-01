@@ -77,8 +77,8 @@ def split_ps_reuse(point_set, level, pos, tree, cutdim):
     num_points = np.array(sz)[0]/2
     max_value = point_set.max(dim=0)[0]
     min_value = -(-point_set).max(dim=0)[0]
+    
     diff = max_value - min_value
-
     dim = torch.max(diff, dim = 1)[1][0,0]
     
     cut = torch.median(point_set[:,dim])[0][0]  
@@ -108,7 +108,7 @@ levels = (np.log(2048)/np.log(2)).astype(int)
 net = KDNet().cuda()
 optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
 
-for it in range(1000):
+for it in range(10000):
     optimizer.zero_grad()
     losses = []
     corrects = []
@@ -144,7 +144,6 @@ for it in range(1000):
         #gc.collect()
         #max_mem_used = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         #print("{:.2f} MB".format(max_mem_used / 1024))
-
         
         points = torch.stack(tree[-1])
         points_v = Variable(torch.unsqueeze(torch.squeeze(points), 0)).transpose(2,1).cuda()
@@ -161,3 +160,7 @@ for it in range(1000):
         
     optimizer.step()
     print('batch: %d, loss: %f, correct %d/10' %( it, np.mean(losses), np.sum(corrects)))
+    
+    if it % 1000 == 0:
+        torch.save(net.state_dict(), 'save_model_%d.pth' % (it))
+        
