@@ -9,7 +9,7 @@ import torch.optim as optim
 class KDNet_Batch(nn.Module):
     def __init__(self, k = 16):
         super(KDNet_Batch, self).__init__()
-        self.conv1 = nn.Conv1d(3,8 * 3,1,1)
+        self.conv1 = nn.Conv1d(4,8 * 3,1,1)
         self.conv2 = nn.Conv1d(8,32 * 3,1,1)
         self.conv3 = nn.Conv1d(32,64 * 3,1,1)
         self.conv4 = nn.Conv1d(64,64 * 3,1,1)
@@ -79,6 +79,7 @@ def split_ps(point_set):
     #print point_set.size()
     num_points = point_set.size()[0]/2
     diff = point_set.max(dim=0)[0] - point_set.min(dim=0)[0]
+    diff = diff[:3]
     dim = torch.max(diff, dim = 1)[1][0,0]
     cut = torch.median(point_set[:,dim])[0][0]
     left_idx = torch.squeeze(torch.nonzero(point_set[:,dim] > cut))
@@ -102,6 +103,7 @@ def split_ps_reuse(point_set, level, pos, tree, cutdim):
     min_value = -(-point_set).max(dim=0)[0]
 
     diff = max_value - min_value
+    diff = diff[:,:3]
     dim = torch.max(diff, dim = 1)[1][0,0]
 
     cut = torch.median(point_set[:,dim])[0][0]
@@ -124,13 +126,15 @@ def split_ps_reuse(point_set, level, pos, tree, cutdim):
 
     return
 
+
 test = False
 import sys
 if len(sys.argv) > 1 and sys.argv[1] == 'test':
     test = True
-    d = PartDataset(root = 'mg', classification = True, train = False)
+    d = PartDataset(root = 'mg', classification = False, train = False)
 else:
-    d = PartDataset(root = 'mg', classification = True)
+    d = PartDataset(root = 'mg', classification = False)
+
 
 
 l = len(d)
@@ -139,12 +143,14 @@ levels = (np.log(2048)/np.log(2)).astype(int)
 net = KDNet_Batch().cuda()
 optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
 
+
 if test:
     net.load_state_dict(torch.load(sys.argv[2]))
     net.eval()
 
 sum_correct = 0
 sum_sample = 0
+
 
 
 for it in range(10000):
@@ -157,8 +163,11 @@ for it in range(10000):
     bt = 20
     for batch in range(bt):
         j = np.random.randint(l)
-        point_set, class_label = d[j]
+        point_set, point_type ,class_label = d[j]
         #print(point_set, class_label)
+        point_type = point_type.unsqueeze(1).float()
+        point_set = torch.cat([point_set, point_type], 1)
+        #print(point_set.size())
         targets.append(class_label)
 
         if batch == 0 and it ==0:
@@ -198,10 +207,12 @@ for it in range(10000):
     pred_choice = pred.data.max(1)[1]
     correct = pred_choice.eq(target_v.data).cpu().sum()
     loss = F.nll_loss(pred, target_v)
+
     if not test:
         loss.backward()
-        
+    
     losses.append(loss.data[0])
+
     
     if not test:
         optimizer.step()
@@ -211,9 +222,9 @@ for it in range(10000):
         if sum_sample > 0:
             print("accuracy: %d/%d = %f" % (sum_correct, sum_sample, sum_correct / float(sum_sample)))
             
-            
+    
     print('batch: %d, loss: %f, correct %d/%d' %( it, np.mean(losses), correct, bt))
 
     if it % 1000 == 0:
-        torch.save(net.state_dict(), 'mg_model_cuda_%d.pth' % (it))
+        torch.save(net.state_dict(), 'mg2_model_cuda_%d.pth' % (it))
 

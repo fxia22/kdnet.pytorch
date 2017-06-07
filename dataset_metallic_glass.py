@@ -62,12 +62,6 @@ class PartDataset(data.Dataset):
         self.classes = dict(zip(self.cat, range(len(self.cat))))
         print(self.classes)
         self.num_seg_classes = 0
-        if not self.classification:
-            for i in range(len(self.datapath)/50):
-                l = len(np.unique(np.loadtxt(self.datapath[i][-1]).astype(np.uint8)))
-                if l > self.num_seg_classes:
-                    self.num_seg_classes = l
-        #print(self.num_seg_classes)
 
 
     def __getitem__(self, index):
@@ -78,19 +72,19 @@ class PartDataset(data.Dataset):
         point_set = cluster_data['delta']
         seg = cluster_data['type_j']
         #print(point_set.shape, seg.shape)
-        
-        
+
+
         point_set = point_set - np.expand_dims(np.mean(point_set, axis = 0), 0)
         dist = np.max(np.sqrt(np.sum(point_set ** 2, axis = 1)),0)
         dist = np.expand_dims(np.expand_dims(dist, 0), 1)
         point_set = point_set/dist
-        
+
 
         choice = np.random.choice(len(seg), self.npoints, replace=True)
         #resample
-        point_set = point_set[choice, :] 
+        point_set = point_set[choice, :]
         point_set = point_set + 1e-5 * np.random.rand(*point_set.shape)
-        
+
         seg = seg[choice]
         point_set = torch.from_numpy(point_set.astype(np.float32))
         seg = torch.from_numpy(seg.astype(np.int64))
@@ -98,7 +92,7 @@ class PartDataset(data.Dataset):
         if self.classification:
             return point_set, cls
         else:
-            return point_set, seg
+            return point_set, seg, cls
 
     def __len__(self):
         return len(self.datapath)

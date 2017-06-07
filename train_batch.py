@@ -124,13 +124,27 @@ def split_ps_reuse(point_set, level, pos, tree, cutdim):
 
     return
 
-d = PartDataset(root = 'shapenetcore_partanno_segmentation_benchmark_v0', classification = True)
+test = False
+import sys
+if len(sys.argv) > 1 and sys.argv[1] == 'test':
+    test = True
+    d = PartDataset(root = 'shapenetcore_partanno_segmentation_benchmark_v0', classification = True, train = False)
+else:
+    d = PartDataset(root = 'shapenetcore_partanno_segmentation_benchmark_v0', classification = True)
 l = len(d)
 print(len(d.classes), l)
 levels = (np.log(2048)/np.log(2)).astype(int)
 net = KDNet_Batch().cuda()
 optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
 
+
+if test:
+    net.load_state_dict(torch.load(sys.argv[2]))
+    net.eval()
+
+sum_correct = 0
+sum_sample = 0
+    
 for it in range(10000):
     optimizer.zero_grad()
     losses = []
@@ -139,6 +153,7 @@ for it in range(10000):
     cutdim_batch = []
     targets = []
     bt = 20
+    
     for batch in range(bt):
         j = np.random.randint(l)
         point_set, class_label = d[j]
@@ -181,9 +196,18 @@ for it in range(10000):
     pred_choice = pred.data.max(1)[1]
     correct = pred_choice.eq(target_v.data).cpu().sum()
     loss = F.nll_loss(pred, target_v)
-    loss.backward()
+    if not test:
+        loss.backward()
     losses.append(loss.data[0])
-    optimizer.step()
+    
+    if not test:
+        optimizer.step()
+    else:
+        sum_correct += correct
+        sum_sample += bt
+        if sum_sample > 0:
+            print("accuracy: %d/%d = %f" % (sum_correct, sum_sample, sum_correct / float(sum_sample)))
+    
     print('batch: %d, loss: %f, correct %d/%d' %( it, np.mean(losses), correct, bt))
 
     if it % 1000 == 0:
