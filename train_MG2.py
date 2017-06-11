@@ -226,5 +226,5 @@ for it in range(10000):
     print('batch: %d, loss: %f, correct %d/%d' %( it, np.mean(losses), correct, bt))
 
     if it % 1000 == 0:
-        torch.save(net.state_dict(), 'mg2_model_cuda_%d.pth' % (it))
+        torch.save(net.state_dict(), 'mg2_model_cuda_new_%d.pth' % (it))
 
