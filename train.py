@@ -35,7 +35,7 @@ class KDNet(nn.Module):
                 sel = sel.cuda()
             x = torch.index_select(x, dim = 2, index = sel)
             x = x.view(-1, featdim, dim/2, 2)
-            x = torch.squeeze(torch.max(x, dim = -1)[0], 3)
+            x = torch.squeeze(torch.max(x, dim = -1, keepdim = True)[0], 3)
             return x
 
         x1 = kdconv(x, 2048, 8, c[-1], self.conv1)
@@ -56,9 +56,9 @@ class KDNet(nn.Module):
 def split_ps(point_set):
     #print point_set.size()
     num_points = point_set.size()[0]/2
-    diff = point_set.max(dim=0)[0] - point_set.min(dim=0)[0]
-    dim = torch.max(diff, dim = 1)[1][0,0]
-    cut = torch.median(point_set[:,dim])[0][0]
+    diff = point_set.max(dim=0, keepdim = True)[0] - point_set.min(dim=0, keepdim = True)[0]
+    dim = torch.max(diff, dim = 1, keepdim = True)[1][0,0]
+    cut = torch.median(point_set[:,dim], keepdim = True)[0][0]
     left_idx = torch.squeeze(torch.nonzero(point_set[:,dim] > cut))
     right_idx = torch.squeeze(torch.nonzero(point_set[:,dim] < cut))
     middle_idx = torch.squeeze(torch.nonzero(point_set[:,dim] == cut))
@@ -77,13 +77,13 @@ def split_ps(point_set):
 def split_ps_reuse(point_set, level, pos, tree, cutdim):
     sz = point_set.size()
     num_points = np.array(sz)[0]/2
-    max_value = point_set.max(dim=0)[0]
-    min_value = -(-point_set).max(dim=0)[0]
+    max_value = point_set.max(dim=0, keepdim = True)[0]
+    min_value = -(-point_set).max(dim=0, keepdim = True)[0]
 
     diff = max_value - min_value
-    dim = torch.max(diff, dim = 1)[1][0,0]
+    dim = torch.max(diff, dim = 1, keepdim = True)[1][0,0]
 
-    cut = torch.median(point_set[:,dim])[0][0]
+    cut = torch.median(point_set[:,dim], keepdim = True)[0][0]
     left_idx = torch.squeeze(torch.nonzero(point_set[:,dim] > cut))
     right_idx = torch.squeeze(torch.nonzero(point_set[:,dim] < cut))
     middle_idx = torch.squeeze(torch.nonzero(point_set[:,dim] == cut))
