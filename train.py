@@ -1,4 +1,3 @@
-from datasets import PartDataset
 import numpy as np
 import torch
 import torch.nn as nn
@@ -6,6 +5,10 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import torch.optim as optim
 
+from kdtree import make_cKDTree
+from datasets import PartDataset
+
+num_points = 2048
 
 class KDNet(nn.Module):
     def __init__(self, k = 16):
@@ -106,7 +109,7 @@ def split_ps_reuse(point_set, level, pos, tree, cutdim):
 d = PartDataset(root = 'shapenetcore_partanno_segmentation_benchmark_v0', classification = True)
 l = len(d)
 print(len(d.classes), l)
-levels = (np.log(2048)/np.log(2)).astype(int)
+levels = (np.log(num_points)/np.log(2)).astype(int)
 net = KDNet().cuda()
 optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
 
@@ -119,35 +122,25 @@ for it in range(10000):
         point_set, class_label = d[j]
 
         target = Variable(class_label).cuda()
-        if batch == 0 and it ==0:
-            tree = [[] for i in range(levels + 1)]
-            cutdim = [[] for i in range(levels)]
-            tree[0].append(point_set)
 
-            for level in range(levels):
-                for item in tree[level]:
-                    left_ps, right_ps, dim = split_ps(item)
-                    tree[level+1].append(left_ps)
-                    tree[level+1].append(right_ps)
-                    cutdim[level].append(dim)
-                    cutdim[level].append(dim)
+        print('point_set.shape', point_set.shape)
+        point_set = point_set[:num_points]
+        if point_set.size(0) < num_points:
+            point_set = torch.cat([point_set, point_set[0:num_points - point_set.size(0)]], 0)
+        print('point_set.shape', point_set.numpy().shape)
 
-        else:
-            tree[0] = [point_set]
-            for level in range(levels):
-                for pos, item in enumerate(tree[level]):
-                    split_ps_reuse(item, level, pos, tree, cutdim)
-                        #print level, pos
+        cutdim, tree = make_cKDTree(point_set.numpy(), depth=levels)
 
         cutdim_v = [(torch.from_numpy(np.array(item).astype(np.int64))) for item in cutdim]
-
+        # print(cutdim_v)
         #import gc
         #import resource
         #gc.collect()
         #max_mem_used = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         #print("{:.2f} MB".format(max_mem_used / 1024))
 
-        points = torch.stack(tree[-1])
+        points = torch.FloatTensor(tree[-1])
+        print(points.size())
         points_v = Variable(torch.unsqueeze(torch.squeeze(points), 0)).transpose(2,1).cuda()
 
         pred = net(points_v, cutdim_v)
@@ -165,4 +158,3 @@ for it in range(10000):
 
     if it % 1000 == 0:
         torch.save(net.state_dict(), 'save_model_%d.pth' % (it))
-
