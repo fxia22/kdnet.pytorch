@@ -33,7 +33,7 @@ class KDNet(nn.Module):
             x =  F.relu(conv(x))
             x = x.view(-1, featdim, 3, dim)
             x = x.view(-1, featdim, 3 * dim)
-            sel = Variable(sel + (torch.arange(0,dim) * 3).long())
+            sel = Variable(sel + (torch.arange(0, dim) * 3).long())
             if x.is_cuda:
                 sel = sel.cuda()
             x = torch.index_select(x, dim = 2, index = sel)
@@ -56,55 +56,6 @@ class KDNet(nn.Module):
         out = F.log_softmax(self.fc(x11))
         return out
 
-def split_ps(point_set):
-    #print point_set.size()
-    num_points = point_set.size()[0]/2
-    diff = point_set.max(dim=0, keepdim = True)[0] - point_set.min(dim=0, keepdim = True)[0]
-    dim = torch.max(diff, dim = 1, keepdim = True)[1][0,0]
-    cut = torch.median(point_set[:,dim], keepdim = True)[0][0]
-    left_idx = torch.squeeze(torch.nonzero(point_set[:,dim] > cut))
-    right_idx = torch.squeeze(torch.nonzero(point_set[:,dim] < cut))
-    middle_idx = torch.squeeze(torch.nonzero(point_set[:,dim] == cut))
-
-    if torch.numel(left_idx) < num_points:
-        left_idx = torch.cat([left_idx, middle_idx[0:1].repeat(num_points - torch.numel(left_idx))], 0)
-    if torch.numel(right_idx) < num_points:
-        right_idx = torch.cat([right_idx, middle_idx[0:1].repeat(num_points - torch.numel(right_idx))], 0)
-
-    left_ps = torch.index_select(point_set, dim = 0, index = left_idx)
-    right_ps = torch.index_select(point_set, dim = 0, index = right_idx)
-    return left_ps, right_ps, dim
-
-
-
-def split_ps_reuse(point_set, level, pos, tree, cutdim):
-    sz = point_set.size()
-    num_points = np.array(sz)[0]/2
-    max_value = point_set.max(dim=0, keepdim = True)[0]
-    min_value = -(-point_set).max(dim=0, keepdim = True)[0]
-
-    diff = max_value - min_value
-    dim = torch.max(diff, dim = 1, keepdim = True)[1][0,0]
-
-    cut = torch.median(point_set[:,dim], keepdim = True)[0][0]
-    left_idx = torch.squeeze(torch.nonzero(point_set[:,dim] > cut))
-    right_idx = torch.squeeze(torch.nonzero(point_set[:,dim] < cut))
-    middle_idx = torch.squeeze(torch.nonzero(point_set[:,dim] == cut))
-
-    if torch.numel(left_idx) < num_points:
-        left_idx = torch.cat([left_idx, middle_idx[0:1].repeat(num_points - torch.numel(left_idx))], 0)
-    if torch.numel(right_idx) < num_points:
-        right_idx = torch.cat([right_idx, middle_idx[0:1].repeat(num_points - torch.numel(right_idx))], 0)
-
-    left_ps = torch.index_select(point_set, dim = 0, index = left_idx)
-    right_ps = torch.index_select(point_set, dim = 0, index = right_idx)
-
-    tree[level+1][pos * 2] = left_ps
-    tree[level+1][pos * 2 + 1] = right_ps
-    cutdim[level][pos * 2] = dim
-    cutdim[level][pos * 2 + 1] = dim
-
-    return
 
 d = PartDataset(root = 'shapenetcore_partanno_segmentation_benchmark_v0', classification = True)
 l = len(d)
@@ -123,24 +74,15 @@ for it in range(10000):
 
         target = Variable(class_label).cuda()
 
-        print('point_set.shape', point_set.shape)
         point_set = point_set[:num_points]
         if point_set.size(0) < num_points:
             point_set = torch.cat([point_set, point_set[0:num_points - point_set.size(0)]], 0)
-        print('point_set.shape', point_set.numpy().shape)
 
         cutdim, tree = make_cKDTree(point_set.numpy(), depth=levels)
 
         cutdim_v = [(torch.from_numpy(np.array(item).astype(np.int64))) for item in cutdim]
-        # print(cutdim_v)
-        #import gc
-        #import resource
-        #gc.collect()
-        #max_mem_used = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        #print("{:.2f} MB".format(max_mem_used / 1024))
 
         points = torch.FloatTensor(tree[-1])
-        print(points.size())
         points_v = Variable(torch.unsqueeze(torch.squeeze(points), 0)).transpose(2,1).cuda()
 
         pred = net(points_v, cutdim_v)

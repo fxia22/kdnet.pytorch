@@ -9,12 +9,29 @@ def get_cutdims(tree, max_depth=7):
     tree_idxs = defaultdict(list)
 
     def _get_cutdims(tree, level=0, parent=None):
-        if not tree.lesser:
-            if level < max_depth:
-                tree = parent
-            else:
-                tree_idxs[level].append(tree.indices)
-                return tree.indices
+        if tree is None:
+            # deal with premature leaf by repeating the leaf
+            tree = parent
+
+        if level >= max_depth:
+            indices = tree.indices
+
+            # make sure it's the right amount of indices for this depth
+            n = 2**(max_depth - level)
+            if len(indices) > n:
+                # since we repeated the premature leafs we might get duplicate indices
+                # or this might comes into play if the input is too large for the tree
+                # print('crop', n, len(indices), level)
+                inds = np.random.choice(range(len(indices)), n)
+                indices = indices[inds]
+            elif len(indices) < n:
+                # pad if input is too small for tree
+                # print('pad', n, len(indices), level)
+                indices = np.concatenate([indices, indices[0:1].repeat(n - len(indices))])
+
+            # end recursion
+            tree_idxs[level].append(indices)
+            return indices
 
         indices = np.concatenate([
             _get_cutdims(tree.lesser, level=level + 1, parent=tree),
@@ -22,18 +39,23 @@ def get_cutdims(tree, max_depth=7):
         ])
         if level < max_depth:
             tree_idxs[level].append(indices)
-            cutdims[level].append(tree.split_dim)
-            cutdims[level].append(tree.split_dim)
+
+            # since we repeated premature leafs, we get invalid splits
+            # in this case just use the parents
+            split_dim = tree.split_dim
+            if split_dim==-1:
+                split_dim=parent.split_dim
+            assert split_dim>-1
+
+            cutdims[level].append(split_dim)
+            cutdims[level].append(split_dim)
         return indices
 
-    # init
+    # init the recursive search
     _get_cutdims(tree, level=0)
 
     # post processes values
     tree_idxs = list(tree_idxs.values())
-    print([len(tree_idxs[i]) for i in range(len(tree_idxs))])
-    tree_idxs = [np.stack(tree_idxs[i]) for i in range(len(tree_idxs))]
-
     cutdims = list(cutdims.values())
     return cutdims, tree_idxs
 
