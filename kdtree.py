@@ -43,9 +43,9 @@ def get_cutdims(tree, max_depth=7):
             # since we repeated premature leafs, we get invalid splits
             # in this case just use the parents
             split_dim = tree.split_dim
-            if split_dim==-1:
-                split_dim=parent.split_dim
-            assert split_dim>-1
+            if split_dim == -1:
+                split_dim = parent.split_dim
+            assert split_dim > -1
 
             cutdims[level].append(split_dim)
             cutdims[level].append(split_dim)
