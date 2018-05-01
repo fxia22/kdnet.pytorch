@@ -12,4 +12,4 @@ download `bash download.sh`, training: `python train.py`
 
 
 ## Acknowledgements
-Shout out to [@wassname](https://github.com/wassname) who increased the scalibility upon my original implementation!
+Shout out to [@wassname](https://github.com/wassname) who increased the scalibility upon my original KDTree implementation!
