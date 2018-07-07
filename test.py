@@ -5,7 +5,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import torch.optim as optim
+from kdtree import make_cKDTree
 import sys
+
+num_points = 2048
 
 class KDNet(nn.Module):
     def __init__(self, k = 16):
@@ -25,15 +28,17 @@ class KDNet(nn.Module):
 
     def forward(self, x, c):
         def kdconv(x, dim, featdim, sel, conv):
-            x =  F.relu(conv(x))
+            batchsize = x.size(0)
+            # print(batchsize)
+            x = F.relu(conv(x))
             x = x.view(-1, featdim, 3, dim)
             x = x.view(-1, featdim, 3 * dim)
-            sel = Variable(sel + (torch.arange(0,dim) * 3).long())
+            sel = Variable(sel + (torch.arange(0, dim) * 3).long())
             if x.is_cuda:
-                sel = sel.cuda()     
-            x = torch.index_select(x, dim = 2, index = sel)
-            x = x.view(-1, featdim, dim/2, 2)
-            x = torch.squeeze(torch.max(x, dim = -1)[0], 3)
+                sel = sel.cuda()
+            x = torch.index_select(x, dim=2, index=sel)
+            x = x.view(-1, featdim, dim / 2, 2)
+            x = torch.squeeze(torch.max(x, dim=-1, keepdim=True)[0], 3)
             return x      
         
         x1 = kdconv(x, 2048, 8, c[-1], self.conv1)
@@ -101,10 +106,10 @@ def split_ps_reuse(point_set, level, pos, tree, cutdim):
     
     return
 
-d = PartDataset(root = '../unsupervised3d/shapenetcore_partanno_segmentation_benchmark_v0', classification = True, train = False)
+d = PartDataset(root = 'shapenetcore_partanno_segmentation_benchmark_v0', classification = True, train = False)
 l = len(d)
 print(len(d.classes), l)
-levels = (np.log(2048)/np.log(2)).astype(int)
+levels = (np.log(num_points)/np.log(2)).astype(int)
 net = KDNet().cuda()
 #optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
 
@@ -117,36 +122,28 @@ corrects = []
 for j in range(len(d)):
 
     point_set, class_label = d[j]
-    target = Variable(class_label).cuda()
-    if j ==0:
-        tree = [[] for i in range(levels + 1)]
-        cutdim = [[] for i in range(levels)]
-        tree[0].append(point_set)
 
-        for level in range(levels):
-            for item in tree[level]:
-                left_ps, right_ps, dim = split_ps(item)
-                tree[level+1].append(left_ps)
-                tree[level+1].append(right_ps)
-                cutdim[level].append(dim)  
-                cutdim[level].append(dim)  
-    else:
-        tree[0] = [point_set]
-        for level in range(levels):
-            for pos, item in enumerate(tree[level]):  
-                split_ps_reuse(item, level, pos, tree, cutdim)
-                    #print level, pos
-                        
+    target = Variable(class_label).cuda()
+    if target != 0:
+        pass
+
+    point_set = point_set[:num_points]
+    if point_set.size(0) < num_points:
+        point_set = torch.cat([point_set, point_set[0:num_points - point_set.size(0)]], 0)
+
+    cutdim, tree = make_cKDTree(point_set.numpy(), depth=levels)
+
     cutdim_v = [(torch.from_numpy(np.array(item).astype(np.int64))) for item in cutdim]
-     
-    points = torch.stack(tree[-1])
-    points_v = Variable(torch.unsqueeze(torch.squeeze(points), 0)).transpose(2,1).cuda()
+
+    points = torch.FloatTensor(tree[-1])
+    points_v = Variable(torch.unsqueeze(torch.squeeze(points), 0)).transpose(2, 1).cuda()
+    
     pred = net(points_v, cutdim_v)
     
     pred_choice = pred.data.max(1)[1]
     correct = pred_choice.eq(target.data).cpu().sum()
     corrects.append(correct)
-    print("%d/%d , %f" %(j, len(d), sum(corrects)/ float(len(corrects))))
+    print("%d/%d , %f" %(j, len(d), float(sum(corrects))/ float(len(corrects))))
     
 
-print(sum(corrects)/ float(len(d)))
+print(float(sum(corrects))/ float(len(d)))
